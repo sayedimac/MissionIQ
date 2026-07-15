@@ -1,0 +1,37 @@
+name: Publish NuGet Package
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore src/MissionIQ/MissionIQ.csproj
+
+      - name: Build
+        run: dotnet build src/MissionIQ/MissionIQ.csproj --configuration Release --no-restore
+
+      - name: Pack
+        run: dotnet pack src/MissionIQ/MissionIQ.csproj --configuration Release --no-build --output ${{ github.workspace }}/artifacts
+
+      - name: Push to GitHub Packages
+        run: dotnet nuget push "${{ github.workspace }}/artifacts/*.nupkg" --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
