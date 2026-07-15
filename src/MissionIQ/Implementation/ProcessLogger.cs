@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using MissionIQ.Abstractions;
+using MissionIQ.Telemetry;
 
 namespace MissionIQ.Implementation;
 
@@ -49,8 +50,8 @@ internal sealed class ProcessLogger : IProcessLogger
 
         var enriched = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["process.id"] = processId,
-            ["activity.name"] = activityName,
+            [ProcessTelemetryConventions.ProcessId] = processId,
+            [ProcessTelemetryConventions.ActivityName] = activityName,
         };
 
         if (metadata is not null)
