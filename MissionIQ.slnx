@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MissionIQ/MissionIQ.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MissionIQ.Tests/MissionIQ.Tests.csproj" />
+  </Folder>
+</Solution>
