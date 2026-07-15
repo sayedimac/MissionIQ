@@ -19,6 +19,20 @@ public interface IProcessInstrumentor
     /// <summary>Gets the logger for emitting structured process activity entries.</summary>
     IProcessLogger Logger { get; }
 
+    /// <summary>Starts the root span for a business process instance.</summary>
+    Activity? StartProcess(
+        string processName,
+        string processId,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null);
+
+    /// <summary>Starts a child span for an agent activity in a business process.</summary>
+    Activity? StartAgentActivity(
+        string activityName,
+        string processId,
+        string agentName,
+        string? agentId = null,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null);
+
     /// <summary>
     /// Convenience method: starts a new trace activity.
     /// </summary>

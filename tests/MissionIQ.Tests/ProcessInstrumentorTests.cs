@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using MissionIQ.Abstractions;
 using MissionIQ.Configuration;
 using MissionIQ.Extensions;
+using MissionIQ.Telemetry;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -90,6 +91,49 @@ public class ServiceCollectionExtensionsTests
 
 public class ProcessTracerTests
 {
+    [Fact]
+    public void StartProcess_CreatesServerSpanWithProcessDimensions()
+    {
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddSource("ProcessSource")
+            .Build()!;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMissionIQ(o => o.ServiceName = "ProcessSource");
+
+        using var provider = services.BuildServiceProvider();
+        var tracer = provider.GetRequiredService<IProcessTracer>();
+        using var activity = tracer.StartProcess("OrderFulfillment", "process-123");
+
+        Assert.NotNull(activity);
+        Assert.Equal(ActivityKind.Server, activity.Kind);
+        Assert.Equal("OrderFulfillment", activity.GetTagItem(ProcessTelemetryConventions.ProcessName));
+        Assert.Equal("process-123", activity.GetTagItem(ProcessTelemetryConventions.ProcessId));
+    }
+
+    [Fact]
+    public void StartAgentActivity_CreatesInternalSpanWithAgentDimensions()
+    {
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddSource("AgentSource")
+            .Build()!;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMissionIQ(o => o.ServiceName = "AgentSource");
+
+        using var provider = services.BuildServiceProvider();
+        var tracer = provider.GetRequiredService<IProcessTracer>();
+        using var process = tracer.StartProcess("ClaimsReview", "claim-123");
+        using var activity = tracer.StartAgentActivity("CheckPolicy", "claim-123", "PolicyAgent", "agent-7");
+
+        Assert.NotNull(activity);
+        Assert.Equal(ActivityKind.Internal, activity.Kind);
+        Assert.Equal(process!.TraceId, activity.TraceId);
+        Assert.Equal(process.SpanId, activity.ParentSpanId);
+        Assert.Equal("PolicyAgent", activity.GetTagItem(ProcessTelemetryConventions.AgentName));
+        Assert.Equal("agent-7", activity.GetTagItem(ProcessTelemetryConventions.AgentId));
+    }
+
     [Fact]
     public void StartActivity_ReturnsActivity_WhenListenerRegistered()
     {
@@ -377,6 +421,24 @@ public class ProcessLoggerTests
 
 public class ProcessInstrumentorTests
 {
+    [Fact]
+    public void Instrumentor_StartProcess_DelegatesToTracer()
+    {
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddSource("FacadeSource")
+            .Build()!;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMissionIQ(o => o.ServiceName = "FacadeSource");
+
+        using var provider = services.BuildServiceProvider();
+        var instrumentor = provider.GetRequiredService<IProcessInstrumentor>();
+        using var activity = instrumentor.StartProcess("Payment", "payment-42");
+
+        Assert.NotNull(activity);
+        Assert.Equal("payment-42", activity.GetTagItem(ProcessTelemetryConventions.ProcessId));
+    }
+
     [Fact]
     public void Instrumentor_ExposesAllPillars()
     {

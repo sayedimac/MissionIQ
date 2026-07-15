@@ -31,6 +31,22 @@ internal sealed class ProcessInstrumentor : IProcessInstrumentor
     public IProcessLogger Logger { get; }
 
     /// <inheritdoc />
+    public Activity? StartProcess(
+        string processName,
+        string processId,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null)
+        => Tracer.StartProcess(processName, processId, tags);
+
+    /// <inheritdoc />
+    public Activity? StartAgentActivity(
+        string activityName,
+        string processId,
+        string agentName,
+        string? agentId = null,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null)
+        => Tracer.StartAgentActivity(activityName, processId, agentName, agentId, tags);
+
+    /// <inheritdoc />
     public Activity? StartActivity(string name, ActivityKind kind = ActivityKind.Internal)
         => Tracer.StartActivity(name, kind);
 

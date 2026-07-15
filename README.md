@@ -10,6 +10,8 @@ MissionIQ exposes the three pillars of observability for business processes:
 | **Metrics** | Point-in-time measurements of process indicators (counters, durations, etc.) |
 | **Logs** | Structured activity records enriched with process context and metadata |
 
+See [the business process telemetry model](docs/telemetry-model.md) for the process/agent trace hierarchy, recommended metrics, workspace-based Log Analytics tables, and KQL examples.
+
 ---
 
 ## Installation
@@ -27,6 +29,7 @@ dotnet add package MissionIQ
 
 ```csharp
 using MissionIQ.Extensions;
+using MissionIQ.Telemetry;
 
 // In Program.cs / Startup.cs
 builder.Services.AddMissionIQ(options =>
@@ -59,18 +62,31 @@ public class OrderProcessor
 
     public async Task ProcessOrderAsync(Order order)
     {
-        // ── Trace ──────────────────────────────────────────────────
-        using var activity = _instrumentor.StartActivity("ProcessOrder");
-        activity?.SetTag("order.id",    order.Id);
-        activity?.SetTag("customer.id", order.CustomerId);
+        // Root Server span: exported to AppRequests in workspace-based LAW.
+        using var process = _instrumentor.StartProcess(
+            "OrderProcessing",
+            order.ProcessId,
+            new Dictionary<string, object?> { ["order.id"] = order.Id });
 
         // ── Metrics ────────────────────────────────────────────────
-        _instrumentor.AddCounter("orders.received");
+        var metricTags = new[]
+        {
+            new KeyValuePair<string, object?>(
+                ProcessTelemetryConventions.ProcessName,
+                "OrderProcessing"),
+        };
+        _instrumentor.AddCounter(ProcessTelemetryConventions.ProcessesStarted, tags: metricTags);
 
         var sw = Stopwatch.StartNew();
+        var status = "succeeded";
         try
         {
-            await DoProcessingAsync(order);
+            // Child Internal span: exported to AppDependencies.
+            using (var activity = _instrumentor.StartAgentActivity(
+                "ValidateOrder", order.ProcessId, "OrderValidationAgent"))
+            {
+                await DoProcessingAsync(order);
+            }
 
             // ── Log ────────────────────────────────────────────────
             _instrumentor.LogProcessActivity(
@@ -82,12 +98,17 @@ public class OrderProcessor
                     ["order.total"] = order.Total,
                 });
 
-            _instrumentor.AddCounter("orders.succeeded");
+            _instrumentor.AddCounter(
+                ProcessTelemetryConventions.ProcessesCompleted,
+                tags: [.. metricTags, new(ProcessTelemetryConventions.ActivityStatus, status)]);
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            _instrumentor.AddCounter("orders.failed");
+            status = "failed";
+            process?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _instrumentor.AddCounter(
+                ProcessTelemetryConventions.ProcessesCompleted,
+                tags: [.. metricTags, new(ProcessTelemetryConventions.ActivityStatus, status)]);
 
             _instrumentor.Logger.Log(
                 LogLevel.Error, "OrderFailed",
@@ -100,7 +121,10 @@ public class OrderProcessor
         finally
         {
             sw.Stop();
-            _instrumentor.RecordHistogram("order.processing.duration.ms", sw.Elapsed.TotalMilliseconds);
+            _instrumentor.RecordHistogram(
+                ProcessTelemetryConventions.ProcessDuration,
+                sw.Elapsed.TotalSeconds,
+                [.. metricTags, new(ProcessTelemetryConventions.ActivityStatus, status)]);
         }
     }
 }
@@ -134,6 +158,8 @@ The primary façade. Inject this single interface to access all three observabil
 | `Metrics` | Access to `IProcessMetrics` |
 | `Logger` | Access to `IProcessLogger` |
 | `StartActivity(name, kind)` | Start a new trace span |
+| `StartProcess(processName, processId, tags)` | Start a root process span (`AppRequests`) |
+| `StartAgentActivity(activityName, processId, agentName, agentId, tags)` | Start a correlated child activity span (`AppDependencies`) |
 | `AddCounter(name, value, tags)` | Increment a named counter |
 | `RecordHistogram(name, value, tags)` | Record a histogram measurement |
 | `LogProcessActivity(activityName, processId, level, metadata)` | Emit a structured process log entry |
